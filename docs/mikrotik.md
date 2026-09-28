@@ -2,6 +2,8 @@
 
 Инструкция для случая, когда сервер Aspia стоит в локальной сети за роутером MikroTik. Подходит для RouterOS 6 и 7.
 
+Ниже два варианта: универсальный (рекомендуется) и [вариант по документации Aspia](#вариант-по-документации-aspia-статический-ip), дополненный портами 3.x.
+
 После настройки:
 - консоли и хосты из интернета подключаются к серверу по внешнему IP роутера;
 - устройства **внутри** сети тоже могут подключаться по внешнему IP (hairpin NAT). Одни и те же настройки консоли и хостов работают и дома, и снаружи;
@@ -106,25 +108,59 @@ Test-NetConnection <внешний IP> -Port 8062
 | Правило есть, но трафик уходит не туда | Выше в списке NAT стоит другое правило на те же порты: `/ip firewall nat print`. Поднимите правила Aspia выше, в WinBox перетаскиванием или командой `move` |
 | Роутер сам использует один из этих портов | Проверьте `/ip service print`. Порты 8060–8070 по умолчанию роутером не заняты |
 
-## Вариант с явным интерфейсом и статическим IP
+## Вариант по документации Aspia (статический IP)
 
-Если вы предпочитаете классическую схему, где указаны WAN-интерфейс и внешний IP, она тоже работает, но только при статическом внешнем IP:
+Разработчик Aspia описывает проброс в [документации](https://aspia.org/docs/mikrotik). Там `netmap` на WAN-интерфейсе и hairpin через внешний IP, но только для портов 2.x (8060 и 8070). Ниже та же схема, дополненная портами 3.x (8061, 8062 и STUN 8065/udp).
+
+Этот вариант удобен, если Router и Relay стоят на **разных** машинах: для них указываются отдельные адреса. В этом контейнере оба сервиса работают вместе, поэтому для него `router` и `relay` одинаковы. Внешний IP должен быть **статическим**.
 
 ```
 {
-:local server "192.168.88.10"
+:local router "192.168.88.10"
+:local relay "192.168.88.10"
 :local lan "192.168.88.0/24"
 :local wan "ether1"
 :local publicip "203.0.113.10"
 
 /ip firewall nat
-add chain=dstnat in-interface=$wan protocol=tcp dst-port=8060-8062,8070 action=dst-nat to-addresses=$server comment="Aspia Server TCP"
-add chain=dstnat in-interface=$wan protocol=udp dst-port=8065 action=dst-nat to-addresses=$server comment="Aspia Server STUN"
-add chain=dstnat src-address=$lan dst-address=$publicip protocol=tcp dst-port=8060-8062,8070 action=dst-nat to-addresses=$server comment="Aspia Server hairpin TCP"
-add chain=dstnat src-address=$lan dst-address=$publicip protocol=udp dst-port=8065 action=dst-nat to-addresses=$server comment="Aspia Server hairpin STUN"
-add chain=srcnat src-address=$lan dst-address=$server protocol=tcp dst-port=8060-8062,8070 action=masquerade comment="Aspia Server hairpin TCP"
-add chain=srcnat src-address=$lan dst-address=$server protocol=udp dst-port=8065 action=masquerade comment="Aspia Server hairpin STUN"
+add action=netmap chain=dstnat comment="Aspia Router" in-interface=$wan protocol=tcp dst-port=8060-8062 to-addresses=$router
+add action=netmap chain=dstnat comment="Aspia Router STUN" in-interface=$wan protocol=udp dst-port=8065 to-addresses=$router
+add action=netmap chain=dstnat comment="Aspia Relay" in-interface=$wan protocol=tcp dst-port=8070 to-addresses=$relay
+add action=dst-nat chain=dstnat comment="Aspia Router" src-address=$lan dst-address=$publicip protocol=tcp dst-port=8060-8062 to-addresses=$router
+add action=dst-nat chain=dstnat comment="Aspia Router STUN" src-address=$lan dst-address=$publicip protocol=udp dst-port=8065 to-addresses=$router
+add action=dst-nat chain=dstnat comment="Aspia Relay" src-address=$lan dst-address=$publicip protocol=tcp dst-port=8070 to-addresses=$relay
+add action=masquerade chain=srcnat comment="Aspia Router" src-address=$lan dst-address=$router protocol=tcp dst-port=8060-8062
+add action=masquerade chain=srcnat comment="Aspia Router STUN" src-address=$lan dst-address=$router protocol=udp dst-port=8065
+add action=masquerade chain=srcnat comment="Aspia Relay" src-address=$lan dst-address=$relay protocol=tcp dst-port=8070
 }
 ```
 
-При PPPoE укажите в `wan` имя PPPoE-интерфейса, например `pppoe-out1`, а не физический порт.
+- В `wan` укажите интерфейс, смотрящий в интернет. При PPPoE это PPPoE-интерфейс, например `pppoe-out1`.
+- Порты при пробросе не меняются, поэтому `to-ports` не указан. Так один `netmap` покрывает сразу несколько портов.
+
+### Если правила 2.x уже есть
+
+Если проброс когда-то делали по документации Aspia, правила для 8060 и 8070 уже есть. Достаточно добавить порты 3.x, а старые правила не трогать:
+
+```
+{
+:local router "192.168.88.10"
+:local lan "192.168.88.0/24"
+:local wan "ether1"
+:local publicip "203.0.113.10"
+
+/ip firewall nat
+add action=netmap chain=dstnat comment="Aspia Router 3.x" in-interface=$wan protocol=tcp dst-port=8061,8062 to-addresses=$router
+add action=netmap chain=dstnat comment="Aspia Router 3.x STUN" in-interface=$wan protocol=udp dst-port=8065 to-addresses=$router
+add action=dst-nat chain=dstnat comment="Aspia Router 3.x" src-address=$lan dst-address=$publicip protocol=tcp dst-port=8061,8062 to-addresses=$router
+add action=dst-nat chain=dstnat comment="Aspia Router 3.x STUN" src-address=$lan dst-address=$publicip protocol=udp dst-port=8065 to-addresses=$router
+add action=masquerade chain=srcnat comment="Aspia Router 3.x" src-address=$lan dst-address=$router protocol=tcp dst-port=8061,8062
+add action=masquerade chain=srcnat comment="Aspia Router 3.x STUN" src-address=$lan dst-address=$router protocol=udp dst-port=8065
+}
+```
+
+Правила этого варианта помечены комментариями `Aspia Router` и `Aspia Relay`. Команды проверки и удаления выше ищут `Aspia Server`, поэтому для этого варианта используйте поиск по `^Aspia`:
+
+```
+/ip firewall nat print stats where comment~"^Aspia"
+```
