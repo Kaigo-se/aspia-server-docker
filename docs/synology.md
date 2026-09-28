@@ -108,3 +108,13 @@ sudo docker exec aspia-updater update.sh
 
 1. Container Manager → Проект `aspia` → **Остановить**.
 2. Запустите старый проект.
+
+## Частые ошибки
+
+| Ошибка | Решение |
+|---|---|
+| `Bind mount failed: '/volume1/docker/aspia/data/...' does not exist` | не созданы папки `data/config`, `data/database`, `data/logs` (шаг 1) |
+| `Bind mount failed: '/volume1/...' does not exist` с путём самой папки проекта | `ASPIA_DIR` в `.env` не совпадает с реальным путём (шаг 2) |
+| `Bind mount failed: '/root/.docker' does not exist` | старая версия `compose.yaml`: скачайте актуальный из репозитория, замените файл и пересоберите проект (Действие → Собрать) |
+| `aspia-updater` пишет `.env not found` | `ASPIA_DIR` в `.env` не совпадает с реальным путём |
+| `address already in use` | работает старый сервер Aspia на тех же портах: остановите его |

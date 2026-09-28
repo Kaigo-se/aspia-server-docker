@@ -337,6 +337,7 @@ docker start aspia-server
 | Консоль подключается, но сеанс с хостом не устанавливается | порт 8070 не открыт или неверный `EXTERNAL_IP` (см. журнал контейнера) |
 | `ERROR: .../.env not found` в журнале `aspia-updater` | `ASPIA_DIR` в `.env` не совпадает с реальным путём к проекту |
 | `address already in use` | порты заняты: остановите старый сервер Aspia |
+| `Bind mount failed: '...' does not exist` (Synology) | Synology не создаёт папки для томов сам: создайте `data/config`, `data/database`, `data/logs` и проверьте, что `ASPIA_DIR` в `.env` — точный путь к папке проекта. Если ошибка про `/root/.docker`, скачайте свежий `compose.yaml` из репозитория |
 
 Строки `sd_login_monitor_new failed` и `Unable to install signal handler for SIGKILL/SIGSTOP` в логах безобидны: в контейнере нет systemd.
 

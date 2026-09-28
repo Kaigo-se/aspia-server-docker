@@ -40,6 +40,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # Mounted at the same path as on the host, so compose resolves ./data identically.
       - ${ASPIA_DIR}:${ASPIA_DIR}
-      # Registry credentials of the host ("docker login ghcr.io"), needed for private images.
-      - ${DOCKER_CONFIG_DIR:-/root/.docker}:/run/host-docker:ro
+      # Only for images in a private registry: after "docker login" on the host, uncomment
+      # (the directory must exist, e.g. /root/.docker).
+      # - /root/.docker:/run/host-docker:ro
     restart: unless-stopped

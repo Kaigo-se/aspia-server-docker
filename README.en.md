@@ -232,6 +232,7 @@ docker compose up -d server
 | 2.x hosts fail with `Invalid peer architecture` | the host is older than 2.6.2, update it |
 | The console connects but sessions fail | port 8070 is closed or `EXTERNAL_IP` is wrong |
 | `.env not found` in the `aspia-updater` log | `ASPIA_DIR` does not match the real project path |
+| `Bind mount failed: '...' does not exist` (Synology) | Synology does not create bind mount folders: create `data/config`, `data/database`, `data/logs` and make sure `ASPIA_DIR` is the exact project path. If it mentions `/root/.docker`, download the current `compose.yaml` |
 
 The log lines `sd_login_monitor_new failed` and `Unable to install signal handler for SIGKILL/SIGSTOP` are harmless: there is no systemd in the container.
 

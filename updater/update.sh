@@ -50,7 +50,7 @@ if [[ ! -f "${ENV_FILE}" ]]; then
 fi
 cd "${ASPIA_DIR}" || exit 1
 
-# Registry credentials of the host (private images).
+# Registry credentials of the host for private images (optional mount, see compose.yaml).
 if [[ -f /run/host-docker/config.json ]]; then
     mkdir -p "${HOME}/.docker"
     cp /run/host-docker/config.json "${HOME}/.docker/config.json"
