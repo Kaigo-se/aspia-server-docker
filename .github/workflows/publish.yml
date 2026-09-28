@@ -45,7 +45,7 @@ jobs:
       - name: Image names
         id: names
         run: |
-          owner="${GITHUB_REPOSITORY_SinitsaDA,,}"
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
           echo "server_image=ghcr.io/${owner}/aspia-server" >> "$GITHUB_OUTPUT"
           echo "updater_image=ghcr.io/${owner}/aspia-server-updater" >> "$GITHUB_OUTPUT"
 
