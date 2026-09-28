@@ -57,6 +57,8 @@ Host networking (`network_mode: host`) is used.
 | 8065/udp | Router | built-in STUN server | yes |
 | 8070/tcp | Relay | console to host traffic | yes |
 
+Behind a MikroTik router: a ready-made port forwarding script is in [docs/mikrotik.md](docs/mikrotik.md) (in Russian, the RouterOS commands are universal).
+
 ## Settings (`.env`)
 
 | Variable | Default | Description |

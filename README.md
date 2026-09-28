@@ -31,6 +31,7 @@
 - [Обновления](#обновления)
 - [Переход с Aspia 2.x](#переход-с-aspia-2x)
 - [Synology NAS](docs/synology.md)
+- [Проброс портов на MikroTik](docs/mikrotik.md)
 - [Бэкапы и восстановление](#бэкапы-и-восстановление)
 - [Локальная сборка](#локальная-сборка)
 - [Устранение неполадок](#устранение-неполадок)
@@ -85,6 +86,8 @@ sudo docker logs aspia-server
 | 8063/tcp | Router | подключение Relay к Router | нет |
 | 8065/udp | Router | встроенный STUN-сервер | да |
 | 8070/tcp | Relay | соединения между консолью и хостом | да |
+
+Сервер за роутером MikroTik — готовый скрипт проброса портов в [docs/mikrotik.md](docs/mikrotik.md).
 
 ## Настройки
 
@@ -246,6 +249,7 @@ docker build --build-arg ASPIA_VERSION=3.0.18 -t aspia-server:3.0.18 server
 ```
 ├── compose.yaml            сервер + планировщик (готовые образы)
 ├── compose.build.yaml      дополнение для локальной сборки
+├── docs/                   Synology, MikroTik
 ├── .env.example            образец настроек
 ├── server/                 образ ghcr.io/sinitsada/aspia-server
 │   ├── Dockerfile          Debian slim + официальные .deb пакеты Aspia

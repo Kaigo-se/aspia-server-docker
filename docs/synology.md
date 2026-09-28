@@ -95,7 +95,7 @@ Relay configuration of 2.x: /etc/aspia/relay.json, it will be migrated on start
 
 Контейнер использует сеть NAS напрямую. Если в DSM включён брандмауэр (Панель управления → Безопасность → Брандмауэр), разрешите в нём порты.
 
-На роутере пробросьте на IP NAS:
+На роутере пробросьте на IP NAS (для MikroTik есть готовый скрипт: [mikrotik.md](mikrotik.md)):
 
 | Порт | Для чего |
 |---|---|
