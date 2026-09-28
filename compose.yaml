@@ -1,0 +1,45 @@
+# Aspia Server (Router + Relay) with automatic updates.
+# Settings are in .env (copy .env.example). Documentation: README.md
+#
+# To build the images locally instead of pulling them, set in .env:
+#   COMPOSE_FILE=compose.yaml:compose.build.yaml
+
+services:
+  # Aspia Router + Relay.
+  server:
+    image: ${ASPIA_IMAGE:-ghcr.io/sinitsada/aspia-server}:${ASPIA_VERSION:?set ASPIA_VERSION in .env}
+    container_name: aspia-server
+    hostname: aspia-server
+    # Host networking: 8060/tcp hosts 2.x | 8061/tcp hosts 3.x | 8062/tcp consoles |
+    # 8063/tcp relay <-> router | 8065/udp STUN | 8070/tcp relay peers
+    network_mode: host
+    environment:
+      EXTERNAL_IP: ${EXTERNAL_IP:?set EXTERNAL_IP in .env}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ./data/database:/var/lib/aspia
+      - ./data/config:/etc/aspia
+      - ./data/logs:/var/log/aspia
+    stop_grace_period: 20s
+    restart: unless-stopped
+
+  # Checks for new Aspia releases every day and updates the server:
+  # backup -> new version -> health check -> automatic rollback on failure.
+  updater:
+    image: ${UPDATER_IMAGE:-ghcr.io/sinitsada/aspia-server-updater}:latest
+    container_name: aspia-updater
+    environment:
+      ASPIA_DIR: ${ASPIA_DIR:?set ASPIA_DIR in .env}
+      TZ: ${TZ:-UTC}
+      UPDATE_TIME: ${UPDATE_TIME:-04:00}
+      MIN_AGE_DAYS: ${MIN_AGE_DAYS:-2}
+      KEEP_BACKUPS: ${KEEP_BACKUPS:-10}
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-30}
+      SELF_UPDATE: ${SELF_UPDATE:-1}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mounted at the same path as on the host, so compose resolves ./data identically.
+      - ${ASPIA_DIR}:${ASPIA_DIR}
+      # Registry credentials of the host ("docker login ghcr.io"), needed for private images.
+      - ${DOCKER_CONFIG_DIR:-/root/.docker}:/run/host-docker:ro
+    restart: unless-stopped

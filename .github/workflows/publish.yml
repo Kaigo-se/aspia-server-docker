@@ -1,0 +1,207 @@
+name: Publish images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - "updater/**"
+      - ".github/workflows/publish.yml"
+  schedule:
+    # New Aspia releases are picked up within 6 hours.
+    - cron: "17 */6 * * *"
+    # Weekly rebuild of the current release with fresh Debian / Alpine packages.
+    - cron: "43 2 * * 1"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Aspia version to build (empty = latest release)"
+        required: false
+        default: ""
+      force:
+        description: "Rebuild even if the image already exists"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_latest: ${{ steps.version.outputs.is_latest }}
+      server_image: ${{ steps.names.outputs.server_image }}
+      updater_image: ${{ steps.names.outputs.updater_image }}
+      build_server: ${{ steps.decide.outputs.build_server }}
+      build_updater: ${{ steps.decide.outputs.build_updater }}
+    steps:
+      - name: Image names
+        id: names
+        run: |
+          owner="${GITHUB_REPOSITORY_SinitsaDA,,}"
+          echo "server_image=ghcr.io/${owner}/aspia-server" >> "$GITHUB_OUTPUT"
+          echo "updater_image=ghcr.io/${owner}/aspia-server-updater" >> "$GITHUB_OUTPUT"
+
+      - name: Aspia version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          latest="$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" \
+            https://api.github.com/repos/dchapyshev/aspia/releases/latest | jq -r .tag_name)"
+          latest="${latest#v}"
+          version="${INPUT_VERSION:-$latest}"
+          version="${version#v}"
+          [[ "${version}" =~ ^[0-9]+(\.[0-9]+)+$ ]] || { echo "Bad version: ${version}"; exit 1; }
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          [[ "${version}" == "${latest}" ]] && echo "is_latest=true" >> "$GITHUB_OUTPUT" || echo "is_latest=false" >> "$GITHUB_OUTPUT"
+          echo "Aspia ${version} (latest release: ${latest})"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Decide what to build
+        id: decide
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SERVER_IMAGE: ${{ steps.names.outputs.server_image }}
+          UPDATER_IMAGE: ${{ steps.names.outputs.updater_image }}
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          # The release packages must be uploaded already.
+          for component in router relay; do
+            url="https://github.com/dchapyshev/aspia/releases/download/v${VERSION}/aspia-${component}-${VERSION}-x86_64.deb"
+            if ! curl -fsIL -o /dev/null "${url}"; then
+              echo "Package not available yet: ${url}"
+              echo "build_server=false" >> "$GITHUB_OUTPUT"
+              echo "build_updater=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+
+          exists() { docker manifest inspect "$1" >/dev/null 2>&1; }
+
+          build_server=true
+          build_updater=true
+          if [[ "${EVENT}" == "schedule" && "${SCHEDULE}" != "43 2 * * 1" ]]; then
+            exists "${SERVER_IMAGE}:${VERSION}" && build_server=false
+            exists "${UPDATER_IMAGE}:latest" && build_updater=false
+          fi
+          if [[ "${EVENT}" == "workflow_dispatch" && "${FORCE}" != "true" ]]; then
+            exists "${SERVER_IMAGE}:${VERSION}" && build_server=false
+          fi
+
+          echo "build_server=${build_server}" >> "$GITHUB_OUTPUT"
+          echo "build_updater=${build_updater}" >> "$GITHUB_OUTPUT"
+          echo "server: ${build_server}, updater: ${build_updater}"
+
+  server:
+    needs: prepare
+    if: needs.prepare.outputs.build_server == 'true'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      IMAGE: ${{ needs.prepare.outputs.server_image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tags
+        id: tags
+        run: |
+          tags="${IMAGE}:${VERSION}"
+          if [[ "${{ needs.prepare.outputs.is_latest }}" == "true" ]]; then
+            minor="${VERSION%.*}"
+            tags="${tags},${IMAGE}:${minor},${IMAGE}:${VERSION%%.*},${IMAGE}:latest"
+          fi
+          echo "tags=${tags}" >> "$GITHUB_OUTPUT"
+          echo "${tags}"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./server
+          build-args: ASPIA_VERSION=${{ env.VERSION }}
+          platforms: linux/amd64
+          pull: true
+          load: true
+          tags: aspia-server:test
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,scope=server,mode=max
+
+      - name: Smoke test
+        run: |
+          docker run -d --name test --network host -e EXTERNAL_IP=127.0.0.1 aspia-server:test
+          for _ in $(seq 1 30); do
+            sleep 5
+            status="$(docker inspect -f '{{.State.Health.Status}}' test)"
+            echo "health: ${status}"
+            [[ "${status}" == "healthy" ]] && break
+          done
+          docker logs test
+          docker exec test aspia_router --version | grep -F "${VERSION}"
+          [[ "$(docker inspect -f '{{.State.Health.Status}}' test)" == "healthy" ]]
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./server
+          build-args: ASPIA_VERSION=${{ env.VERSION }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+          cache-from: type=gha,scope=server
+
+  updater:
+    needs: prepare
+    if: needs.prepare.outputs.build_updater == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./updater
+          platforms: linux/amd64
+          pull: true
+          push: true
+          tags: ${{ needs.prepare.outputs.updater_image }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=updater
+          cache-to: type=gha,scope=updater,mode=max

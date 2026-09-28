@@ -1,0 +1,123 @@
+#!/bin/bash
+#
+# Prepares the configuration and runs Aspia Router and Aspia Relay.
+#  - no configuration:          creates a new one (user admin / admin);
+#  - configuration of 2.x:      the services convert it on start (*.json -> *.conf, *.json.bak kept);
+#  - on every start:            EXTERNAL_IP and the router public key are written to the relay config.
+
+CONFIG_DIR=/etc/aspia
+DATA_DIR=/var/lib/aspia
+
+ROUTER_CONF=${CONFIG_DIR}/router.conf
+RELAY_CONF=${CONFIG_DIR}/relay.conf
+ROUTER_LEGACY_CONF=${CONFIG_DIR}/router.json
+RELAY_LEGACY_CONF=${CONFIG_DIR}/relay.json
+LEGACY_PUBLIC_KEY=${CONFIG_DIR}/router.pub
+HOST_PUBLIC_KEY=${CONFIG_DIR}/host.pub
+RELAY_PUBLIC_KEY=${CONFIG_DIR}/relay.pub
+
+TIMESTAMP="$(date +%Y-%m-%d_%H-%M)"
+
+# Until the services are running there is nothing to stop gracefully.
+trap 'exit 143' SIGINT SIGTERM
+
+# ini_set <file> <section> <key> <value>
+ini_set() {
+    awk -v section="[$2]" -v key="$3" -v value="$4" '
+        $0 == section { in_section = 1; print; next }
+        /^\[/ { if (in_section && !done) { print key "=" value; done = 1 } in_section = 0 }
+        in_section && index($0, key "=") == 1 { print key "=" value; done = 1; next }
+        { print }
+        END { if (!done) { if (!in_section) print section; print key "=" value } }
+    ' "$1" > "$1.tmp" && cat "$1.tmp" > "$1" && rm -f "$1.tmp"
+}
+
+# json_set <file> <key> <value>
+json_set() {
+    jq --arg value "$3" ".$2 = \$value" "$1" > "$1.tmp" && cat "$1.tmp" > "$1" && rm -f "$1.tmp"
+}
+
+mkdir -p "${CONFIG_DIR}" "${DATA_DIR}"
+
+echo "Aspia Server ${ASPIA_VERSION}"
+
+# ---------- Router ----------
+
+if [[ -f "${ROUTER_CONF}" ]]; then
+    echo "Router configuration: ${ROUTER_CONF}"
+elif [[ -f "${ROUTER_LEGACY_CONF}" ]]; then
+    echo "Router configuration of 2.x: ${ROUTER_LEGACY_CONF}, it will be migrated on start"
+else
+    echo "Router configuration not found, creating a new one..."
+
+    for file in "${DATA_DIR}/router.db3" "${HOST_PUBLIC_KEY}" "${RELAY_PUBLIC_KEY}"; do
+        if [[ -f "${file}" ]]; then
+            echo "Moving stale ${file} to ${file}_${TIMESTAMP}"
+            mv "${file}" "${file}_${TIMESTAMP}"
+        fi
+    done
+
+    /usr/bin/aspia_router --create-config || exit 1
+fi
+
+# After migration from 2.x hosts and relays keep using the single old key pair.
+if [[ -f "${LEGACY_PUBLIC_KEY}" ]]; then
+    for file in "${HOST_PUBLIC_KEY}" "${RELAY_PUBLIC_KEY}"; do
+        [[ -f "${file}" ]] || cp "${LEGACY_PUBLIC_KEY}" "${file}"
+    done
+fi
+
+# ---------- Relay ----------
+
+if [[ -f "${RELAY_CONF}" ]]; then
+    echo "Relay configuration: ${RELAY_CONF}"
+elif [[ -f "${RELAY_LEGACY_CONF}" ]]; then
+    echo "Relay configuration of 2.x: ${RELAY_LEGACY_CONF}, it will be migrated on start"
+else
+    echo "Relay configuration not found, creating a new one..."
+    /usr/bin/aspia_relay --create-config || exit 1
+fi
+
+[[ -n "${EXTERNAL_IP}" ]] || echo "WARNING: EXTERNAL_IP is not set - clients will not be able to reach the relay!"
+
+PUBLIC_KEY=""
+[[ -f "${RELAY_PUBLIC_KEY}" ]] && PUBLIC_KEY="$(tr -d '[:space:]' < "${RELAY_PUBLIC_KEY}")"
+
+if [[ -f "${RELAY_CONF}" ]]; then
+    [[ -n "${EXTERNAL_IP}" ]] && ini_set "${RELAY_CONF}" peer public_address "${EXTERNAL_IP}"
+    [[ -n "${PUBLIC_KEY}" ]] && ini_set "${RELAY_CONF}" router public_key "${PUBLIC_KEY}"
+else
+    # Written to the 2.x config, the relay carries the values over during migration.
+    [[ -n "${EXTERNAL_IP}" ]] && json_set "${RELAY_LEGACY_CONF}" PeerAddress "${EXTERNAL_IP}"
+    [[ -n "${PUBLIC_KEY}" ]] && json_set "${RELAY_LEGACY_CONF}" RouterPublicKey "${PUBLIC_KEY}"
+fi
+
+echo "External IP: ${EXTERNAL_IP:-<not set>}"
+echo "Router public key: ${PUBLIC_KEY:-<not found>}"
+
+# ---------- Start ----------
+
+/usr/bin/aspia_router & ROUTER_PID=$!
+echo "aspia_router started (pid ${ROUTER_PID})"
+
+# Give the router time to open its ports, otherwise the relay retries only after 15 seconds.
+sleep 2
+
+/usr/bin/aspia_relay & RELAY_PID=$!
+echo "aspia_relay started (pid ${RELAY_PID})"
+
+stop() {
+    echo "Stopping..."
+    kill ${ROUTER_PID} ${RELAY_PID} 2>/dev/null
+    wait ${ROUTER_PID} ${RELAY_PID}
+    exit 0
+}
+trap stop SIGINT SIGTERM
+
+# If one of the services dies, stop the other one too and let the restart policy bring both back.
+wait -n ${ROUTER_PID} ${RELAY_PID}
+EXIT_CODE=$?
+echo "A service has exited (code ${EXIT_CODE}), stopping the other one..."
+kill ${ROUTER_PID} ${RELAY_PID} 2>/dev/null
+wait
+exit ${EXIT_CODE}

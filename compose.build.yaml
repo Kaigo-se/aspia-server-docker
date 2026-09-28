@@ -1,0 +1,15 @@
+# Builds the images locally instead of pulling them from the registry.
+# Enable in .env:  COMPOSE_FILE=compose.yaml:compose.build.yaml
+# The updater then builds each new Aspia release on this machine.
+
+services:
+  server:
+    image: aspia-server:${ASPIA_VERSION}
+    build:
+      context: ./server
+      args:
+        ASPIA_VERSION: ${ASPIA_VERSION}
+
+  updater:
+    image: aspia-server-updater:latest
+    build: ./updater

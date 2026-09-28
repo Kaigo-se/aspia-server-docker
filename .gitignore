@@ -1,0 +1,6 @@
+.env
+data/
+backups/
+import/
+update.log
+.update.lock/
