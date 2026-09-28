@@ -66,7 +66,7 @@ jobs:
           echo "Aspia ${version} (latest release: ${latest})"
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -117,7 +117,7 @@ jobs:
       VERSION: ${{ needs.prepare.outputs.version }}
       IMAGE: ${{ needs.prepare.outputs.server_image }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Tags
         id: tags
@@ -130,10 +130,10 @@ jobs:
           echo "tags=${tags}" >> "$GITHUB_OUTPUT"
           echo "${tags}"
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./server
           build-args: ASPIA_VERSION=${{ env.VERSION }}
@@ -158,14 +158,14 @@ jobs:
           [[ "$(docker inspect -f '{{.State.Health.Status}}' test)" == "healthy" ]]
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
       - name: Push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./server
           build-args: ASPIA_VERSION=${{ env.VERSION }}
@@ -182,19 +182,19 @@ jobs:
     if: needs.prepare.outputs.build_updater == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./updater
           platforms: linux/amd64
