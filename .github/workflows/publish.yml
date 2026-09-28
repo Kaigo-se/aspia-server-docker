@@ -205,3 +205,37 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha,scope=updater
           cache-to: type=gha,scope=updater,mode=max
+
+  # New installations start from the newest published version.
+  env-example:
+    needs: [prepare, server]
+    if: always() && needs.prepare.outputs.is_latest == 'true' && (needs.server.result == 'success' || needs.server.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: read
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      IMAGE: ${{ needs.prepare.outputs.server_image }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Update ASPIA_VERSION in .env.example
+        run: |
+          docker manifest inspect "${IMAGE}:${VERSION}" >/dev/null || { echo "Image ${IMAGE}:${VERSION} is not published"; exit 0; }
+          sed -i "s/^ASPIA_VERSION=.*/ASPIA_VERSION=${VERSION}/" .env.example
+          if git diff --quiet; then
+            echo ".env.example already has ${VERSION}"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Aspia ${VERSION}: update .env.example"
+          git push
