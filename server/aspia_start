@@ -78,6 +78,20 @@ else
     /usr/bin/aspia_relay --create-config || exit 1
 fi
 
+# EXTERNAL_IP=auto: ask public services for the address this server is seen from.
+if [[ "${EXTERNAL_IP,,}" == "auto" ]]; then
+    EXTERNAL_IP=""
+    for url in https://api.ipify.org https://ifconfig.me/ip https://icanhazip.com; do
+        ip="$(curl -fsS --max-time 5 "${url}" 2>/dev/null | tr -d '[:space:]')"
+        if [[ "${ip}" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ || "${ip}" =~ ^[0-9a-fA-F:]+:[0-9a-fA-F:]*$ ]]; then
+            EXTERNAL_IP="${ip}"
+            echo "External IP detected via ${url}: ${EXTERNAL_IP}"
+            break
+        fi
+    done
+    [[ -n "${EXTERNAL_IP}" ]] || echo "WARNING: unable to detect the external IP"
+fi
+
 [[ -n "${EXTERNAL_IP}" ]] || echo "WARNING: EXTERNAL_IP is not set - clients will not be able to reach the relay!"
 
 PUBLIC_KEY=""
@@ -92,8 +106,12 @@ else
     [[ -n "${PUBLIC_KEY}" ]] && json_set "${RELAY_LEGACY_CONF}" RouterPublicKey "${PUBLIC_KEY}"
 fi
 
-echo "External IP: ${EXTERNAL_IP:-<not set>}"
-echo "Router public key: ${PUBLIC_KEY:-<not found>}"
+echo "------------------------------------------------------------------------"
+echo " External IP (relay):  ${EXTERNAL_IP:-<not set>}"
+echo " Public key for hosts: $(tr -d '[:space:]' < "${HOST_PUBLIC_KEY}" 2>/dev/null || echo '<not found>')"
+echo " Ports: 8060/tcp hosts 2.x, 8061/tcp hosts 3.x, 8062/tcp consoles,"
+echo "        8065/udp STUN, 8070/tcp relay"
+echo "------------------------------------------------------------------------"
 
 # ---------- Start ----------
 

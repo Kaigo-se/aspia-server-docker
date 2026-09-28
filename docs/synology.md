@@ -25,7 +25,7 @@ docker/aspia/
 Откройте `.env` в Text Editor (пакет DSM) и укажите:
 
 ```ini
-EXTERNAL_IP=<ваш внешний IP>
+EXTERNAL_IP=<ваш внешний IP или auto>
 ASPIA_DIR=/volume1/docker/aspia
 TZ=Europe/Moscow
 ```
@@ -45,19 +45,6 @@ TZ=Europe/Moscow
 Копируйте, а не переносите: оригинал пригодится для отката. Конвертация в формат 3.x произойдёт при первом запуске.
 
 **Важно:** хосты старше 2.6.2 к Aspia 3.x не подключатся, их нужно обновить.
-
-## 3а. Доступ к образам (если они приватные)
-
-Если пакеты на GitHub закрыты:
-
-1. Создайте на GitHub токен: Settings → Developer settings → Personal access tokens (classic), право только `read:packages`.
-2. Подключитесь к NAS по SSH и выполните:
-   ```bash
-   sudo docker login ghcr.io -u <логин GitHub>
-   # Password: вставьте токен
-   ```
-
-Логин сохранится в `/root/.docker/config.json`, и оттуда его возьмут и Container Manager, и планировщик.
 
 ## 4. Создать проект
 
