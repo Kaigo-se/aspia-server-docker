@@ -7,11 +7,11 @@ on:
       - "server/**"
       - "updater/**"
       - ".github/workflows/publish.yml"
-  schedule:
+# schedule:
     # New Aspia releases are picked up within 6 hours.
-    - cron: "17 */6 * * *"
+    # - cron: "17 */6 * * *"
     # Weekly rebuild of the current release with fresh Debian / Alpine packages.
-    - cron: "43 2 * * 1"
+    # - cron: "43 2 * * 1"
   workflow_dispatch:
     inputs:
       version:
